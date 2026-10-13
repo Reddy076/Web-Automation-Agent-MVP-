@@ -1,30 +1,44 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>web-agent MVP</title>
-<style>body{font-family:system-ui;margin:24px;max-width:900px}input,button{padding:10px;font-size:15px}img{max-width:100%;border:1px solid #ddd}pre{background:#f5f5f5;padding:12px;overflow:auto}</style>
+<style>body{font-family:system-ui;margin:24px;max-width:900px}input,button{padding:10px;font-size:15px}img{max-width:100%;border:1px solid #ddd}pre{background:#f5f5f5;padding:12px;overflow:auto}#log{color:#555}</style>
 </head><body>
 <h2>Web Automation Agent (MVP)</h2>
-<input id="url" size="50" value="https://example.com">
+<input id="url" size="50" value="https://books.toscrape.com">
 <br><br>
-<input id="task" size="50" value="get headings and any prices from this page">
+<input id="task" size="50" value="get headings and prices from this page">
 <button onclick="run()">Run</button>
 <p id="status"></p>
+<p id="log"></p>
 <div id="shots"></div>
 <pre id="out"></pre>
 <script>
 async function run(){
-  document.getElementById('status').textContent='running... (30s max)';
-  document.getElementById('out').textContent='';
-  document.getElementById('shots').innerHTML='';
-  const r = await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+  const status=document.getElementById('status'), log=document.getElementById('log'),
+        out=document.getElementById('out'), shots=document.getElementById('shots');
+  status.textContent='queuing...'; log.textContent=''; out.textContent=''; shots.innerHTML='';
+  const r = await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({task:task.value,url:url.value})});
-  const j = await r.json();
-  document.getElementById('status').textContent = r.ok ? 'done: '+j.run_id : 'error: '+JSON.stringify(j);
-  document.getElementById('out').textContent = JSON.stringify(j,null,2).slice(0,12000);
-  if(j.result?.screenshot_b64){
-    const img=document.createElement('img');
-    img.src='data:image/png;base64,'+j.result.screenshot_b64;
-    document.getElementById('shots').appendChild(img);
+  const q = await r.json();
+  if(!r.ok){ status.textContent='error: '+JSON.stringify(q); return; }
+  const id=q.job_id;
+  status.textContent='queued: '+id+' (POST returned instantly, polling...)';
+  const t0=Date.now();
+  while(true){
+    await new Promise(r=>setTimeout(r,2000));
+    const jr = await fetch('/api/jobs/'+id);
+    const j = await jr.json();
+    status.textContent=j.status+': '+id+' ('+Math.round((Date.now()-t0)/1000)+'s)';
+    log.textContent=(j.logs||[]).map(e=>e.action).join(' → ');
+    if(j.status==='finished'||j.status==='failed'){
+      out.textContent=JSON.stringify(j,null,2).slice(0,12000);
+      if(j.result?.screenshot_b64){
+        const img=document.createElement('img');
+        img.src='data:image/png;base64,'+j.result.screenshot_b64;
+        shots.appendChild(img);
+      }
+      break;
+    }
   }
 }
 </script></body></html>
